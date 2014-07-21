@@ -1,0 +1,6 @@
+*.pyproj
+*.sln
+*.suo
+*.dll
+/__pycache__
+/Astropress.sln.ide
