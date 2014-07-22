@@ -1,6 +1,7 @@
 *.pyproj
+*.vcxproj
 *.sln
 *.suo
 *.dll
-/__pycache__
-/Astropress.sln.ide
+*.filters
+/AstropressPlus/include
