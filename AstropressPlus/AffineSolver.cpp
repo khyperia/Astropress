@@ -19,7 +19,7 @@ std::pair<int, int> ClosestPoint(
 				continue;
 			auto rv = reference[ref];
 			auto tsv = toSolve[solve];
-			// hotspot optimization, explicitly spell out multiplication instead of using Eigen's heap objects
+			// hotspot optimization, explicitly spell out multiplication instead of using Eigen's objects
 			auto xLen = rv[0] - guess(0, 0) * tsv[0] - guess(0, 1) * tsv[1] - guess(0, 2);
 			auto yLen = rv[1] - guess(1, 0) * tsv[0] - guess(1, 1) * tsv[1] - guess(1, 2);
 			auto len = xLen * xLen + yLen * yLen;
@@ -63,18 +63,10 @@ std::pair<Eigen::MatrixXd, std::set<std::pair<int, int>>> UpdateGuessICP(
 		solveMat.col(i) = Eigen::Vector3d(sVec[0], sVec[1], 1);
 	}
 
-	/*
-	refMat = guess * solveMat
-	refMat * solveMat^t = guess * solveMat * solveMat^t
-	refMat * solveMat^t * (solveMat * solveMat^t)^-1 = guess
-	*/
-
 	Eigen::MatrixXd mul = refMat * solveMat.transpose() * (solveMat * solveMat.transpose()).inverse();
 	if (mul.hasNaN())
 		throw std::runtime_error("Solved transformation had NaN");
-	//const Eigen::Matrix2d& affine = mul.block<2, 2>(0, 0);
-	//const Eigen::Vector2d& translation = mul.col(2);
-	return std::make_pair(mul, matches);
+	return make_pair(mul, matches);
 }
 
 Eigen::MatrixXd SolveTransform(
@@ -84,7 +76,7 @@ Eigen::MatrixXd SolveTransform(
 {
 	std::pair<Eigen::MatrixXd, std::set<std::pair<int, int>>> old;
 	old.first = guess;
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 64; i++)
 	{
 		auto newPair = UpdateGuessICP(reference, toSolve, old.first);
 		if (newPair.second == old.second)

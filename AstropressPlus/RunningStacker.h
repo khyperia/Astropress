@@ -1,7 +1,6 @@
 #pragma once
 
-#include "EigenAssert.h"
-#include <eigen3/Eigen/Core>
+#include "EigenHeaders.h"
 
 class RunningStacker
 {

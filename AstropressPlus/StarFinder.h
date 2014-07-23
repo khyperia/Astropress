@@ -1,8 +1,10 @@
 #pragma once
 
-#include "EigenAssert.h"
-#include <eigen3/Eigen/Core>
-#include <eigen3/Eigen/StdVector>
+#include "EigenHeaders.h"
 #include <vector>
 
+void EnableStarLocationDump();
+void EnableFlatImageDump();
+void SetFlatPercent(char const* str);
+void SetNumLowFrequencies(char const* str);
 std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> FindStars(Eigen::MatrixXd image);

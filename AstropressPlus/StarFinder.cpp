@@ -1,6 +1,53 @@
+#define _SCL_SECURE_NO_WARNINGS 1
 #include "StarFinder.h"
 
 #include <unsupported/Eigen/FFT>
+#undef _SCL_SECURE_NO_WARNINGS
+
+#include "ImageIo.h"
+
+static bool starLocationDumpEnabled = false;
+static bool flatImageDumpEnabled = false;
+static double flatPercent = 1.0;
+static int numLowFrequencies = 20;
+
+void EnableStarLocationDump()
+{
+	starLocationDumpEnabled = true;
+}
+
+void EnableFlatImageDump()
+{
+	flatImageDumpEnabled = true;
+}
+
+void SetFlatPercent(char const* str)
+{
+	try
+	{
+		flatPercent = stod(std::string(str));
+		if (flatPercent <= 0)
+			throw std::runtime_error("--star_threshhold cannot be <= 0");
+	}
+	catch (std::invalid_argument)
+	{
+		throw std::runtime_error("Could not parse --star_threshhold argument");
+	}
+}
+
+void SetNumLowFrequencies(char const* str)
+{
+	try
+	{
+		numLowFrequencies = stoi(std::string(str));
+		if (numLowFrequencies < 0)
+			throw std::runtime_error("--freq_removal cannot be < 0");
+	}
+	catch (std::invalid_argument)
+	{
+		throw std::runtime_error("Could not parse --freq_removal argument");
+	}
+}
 
 // http://stackoverflow.com/questions/17194451
 Eigen::MatrixXcd FFT(Eigen::MatrixXd in)
@@ -42,12 +89,12 @@ Eigen::MatrixXd IFFT(Eigen::MatrixXcd in)
 }
 // end stackoverflow link
 
-double ReversePercentile(Eigen::MatrixXd block, int percentile)
+double ReversePercentile(Eigen::MatrixXd block, double percentile)
 {
 	auto data = block.data();
-	auto nth = data + block.size() * percentile / 100;
+	auto nth = data + static_cast<int>(block.size() * percentile / 100);
 	auto last = data + block.size();
-	std::nth_element(data, nth, last, std::greater<int>());
+	nth_element(data, nth, last, std::greater<int>());
 	return *nth;
 }
 
@@ -55,10 +102,9 @@ void ThreshHold(Eigen::MatrixXd& image)
 {
 	printf("Removing low frequencies... ");
 	auto fft = FFT(image);
-	const int killFreqRange = 10;
-	for (int row = -killFreqRange; row <= killFreqRange; row++)
+	for (int row = -numLowFrequencies; row <= numLowFrequencies; row++)
 	{
-		for (int col = -killFreqRange; col <= killFreqRange; col++)
+		for (int col = -numLowFrequencies; col <= numLowFrequencies; col++)
 		{
 			int realRow = row < 0 ? row + fft.rows() : row;
 			int realCol = col < 0 ? col + fft.cols() : col;
@@ -68,9 +114,14 @@ void ThreshHold(Eigen::MatrixXd& image)
 	image = IFFT(fft);
 	puts("Done");
 
-	double thresh = ReversePercentile(image, 1);
+	double thresh = ReversePercentile(image, flatPercent);
 	image = image.array() - thresh;
 	image = image.cwiseMax(0);
+
+	if (flatImageDumpEnabled)
+	{
+		DumpImage("flattened", image);
+	}
 }
 
 typedef Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic> ArrayXb;
@@ -110,8 +161,37 @@ Eigen::Vector3d FitAndRemoveGaussian(Eigen::MatrixXd& image, int row, int col)
 	return Eigen::Vector3d(sumMasked, rowf, colf);
 }
 
+void DumpStarLocations(std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> stars, Eigen::MatrixXd image)
+{
+	const int boxSize = 10;
+	const double max = image.maxCoeff();
+	for (unsigned int i = 0; i < stars.size(); i++)
+	{
+		for (int x = -boxSize; x <= boxSize; x++)
+		{
+			for (int y = -boxSize; y <= boxSize; y++)
+			{
+				if (x != -boxSize && x != boxSize && y != -boxSize && y != boxSize)
+					continue;
+				int row = static_cast<int>(stars[i][0]) + y;
+				int col = static_cast<int>(stars[i][1]) + x;
+				if (row < 0 || row >= image.rows() || col < 0 || col >= image.cols())
+					continue;
+				image(row, col) = max;
+			}
+		}
+	}
+	DumpImage("stars", image);
+}
+
 std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> FindStars(Eigen::MatrixXd image)
 {
+	Eigen::MatrixXd copyStarLocation;
+	if (starLocationDumpEnabled)
+	{
+		copyStarLocation = image;
+	}
+
 	ThreshHold(image);
 	std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> result;
 	for (int row = 0; row < image.rows(); row++)
@@ -135,5 +215,11 @@ std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> FindStar
 	std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> result2d(result.size());
 	for (unsigned int i = 0; i < result.size(); i++)
 		result2d[i] = Eigen::Vector2d(result[i][1], result[i][2]);
+
+	if (starLocationDumpEnabled)
+	{
+		DumpStarLocations(result2d, copyStarLocation);
+	}
+
 	return result2d;
 }

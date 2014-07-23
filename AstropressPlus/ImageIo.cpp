@@ -2,10 +2,47 @@
 
 #include <fitsio.h>
 #include <cstdio>
+#include <fstream>
+
+#ifdef _WIN32
+const std::string os_dirsep("\\");
+#else
+const std::string os_dirsep("/");
+#endif
 
 std::runtime_error error(int status)
 {
+	if (status == 105)
+	{
+		puts("Error note: error 105 usually means the saving directory doesn't exist");
+	}
 	return std::runtime_error(std::string("FITS file library error: code ") + std::to_string(status));
+}
+
+static std::string dumpDirectory;
+
+void SetDumpDir(std::string directory)
+{
+	if (directory.length() < os_dirsep.length() || directory.compare(directory.length() - os_dirsep.length(), os_dirsep.length(), os_dirsep) != 0)
+		directory += os_dirsep;
+	dumpDirectory = directory;
+}
+
+void DumpImage(char const* basename, Eigen::MatrixXd const& image)
+{
+	if (dumpDirectory.length() == 0)
+		throw std::runtime_error("Cannot dump image without --dump_dir");
+	std::string base = dumpDirectory + std::string(basename);
+	std::string final;
+	for (int i = 1;; i++)
+	{
+		final = base + std::to_string(i) + std::string(".fits");
+		std::ifstream checker(final);
+		if (checker.fail())
+			break;
+	}
+	printf("Dumping %s\n", final.c_str());
+	SaveImage(final.c_str(), image);
 }
 
 Eigen::MatrixXd LoadImage(char const* filename)
