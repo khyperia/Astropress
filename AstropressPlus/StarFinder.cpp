@@ -6,10 +6,12 @@
 
 #include "ImageIo.h"
 
+#define USE_FFT 0
+
 static bool starLocationDumpEnabled = false;
 static bool flatImageDumpEnabled = false;
 static double flatPercent = 1.0;
-static int numLowFrequencies = 20;
+static int numLowFrequencies = 5;
 
 void EnableStarLocationDump()
 {
@@ -49,6 +51,7 @@ void SetNumLowFrequencies(char const* str)
 	}
 }
 
+#if USE_FFT
 // http://stackoverflow.com/questions/17194451
 Eigen::MatrixXcd FFT(Eigen::MatrixXd in)
 {
@@ -88,6 +91,99 @@ Eigen::MatrixXd IFFT(Eigen::MatrixXcd in)
 	return out;
 }
 // end stackoverflow link
+#else
+
+/// Round up to next higher power of 2 (return x if it's already a power
+/// of 2).
+inline int pow2roundup(int x)
+{
+	if (x < 0)
+		return 0;
+	--x;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	return x + 1;
+}
+
+// Daubechies 4
+// http://web.mit.edu/seven/src/AFNI/Daubechies.c
+Eigen::VectorXd WaveletForward(Eigen::VectorXd input)
+{
+	Eigen::VectorXd tempA(input.size());
+	Eigen::VectorXd tempC(input.size());
+	const double h[4] = { 0.683013, 1.18301, 0.316987, -0.183013 };
+
+	for (int n = input.size(); n > 1; n /= 2)
+	{
+		for (int i = 0; i < n / 2; i++)
+		{
+			tempA[i] = (h[0] * input[(2 * i) % n] + h[1] * input[(2 * i + 1) % n] + h[2] * input[(2 * i + 2) % n] + h[3] * input[(2 * i + 3) % n]) / 2.0;
+			tempC[i] = (h[3] * input[(2 * i) % n] - h[2] * input[(2 * i + 1) % n] + h[1] * input[(2 * i + 2) % n] - h[0] * input[(2 * i + 3) % n]) / 2.0;
+		}
+		for (int i = 0; i < n / 2; i++)
+		{
+			input[i] = tempA[i];
+			input[i + n / 2] = tempC[i];
+		}
+	}
+
+	return input;
+}
+
+Eigen::VectorXd WaveletInverse(Eigen::VectorXd input)
+{
+	const double h[4] = { 0.683013, 1.18301, 0.316987, -0.183013 };
+
+	for (int n = 2; n <= input.size(); n *= 2)
+	{
+		int nptsd2 = n / 2;
+		Eigen::VectorXd a = input.head(nptsd2);
+		Eigen::VectorXd c = input.head(n).tail(nptsd2);
+		for (int i = 0; i < nptsd2; i++)
+		{
+			input[2 * i] = h[2] * a[(i - 1 + nptsd2) % nptsd2] + h[1] * c[(i - 1 + nptsd2) % nptsd2] + h[0] * a[i] + h[3] * c[i];
+			input[2*i+1] = h[3] * a[(i - 1 + nptsd2) % nptsd2] - h[0] * c[(i - 1 + nptsd2) % nptsd2] + h[1] * a[i] - h[2] * c[i];
+		}
+	}
+	return input;
+}
+
+Eigen::MatrixXd WaveletForward2d(Eigen::MatrixXd input, double fillValue)
+{
+	int rows = input.rows();
+	int cols = input.cols();
+	input.conservativeResize(pow2roundup(input.rows()), pow2roundup(input.cols()));
+	input.rightCols(input.cols() - cols).fill(fillValue);
+	input.bottomRows(input.rows() - rows).fill(fillValue);
+
+	for (int row = 0; row < input.rows(); row++)
+		input.row(row) = WaveletForward(input.row(row));
+	for (int col = 0; col < input.cols(); col++)
+		input.col(col) = WaveletForward(input.col(col));
+	return input;
+}
+
+Eigen::MatrixXd WaveletInverse2d(Eigen::MatrixXd input, int rows, int cols)
+{
+	for (int col = 0; col < input.cols(); col++)
+		input.col(col) = WaveletInverse(input.col(col));
+	for (int row = 0; row < input.rows(); row++)
+		input.row(row) = WaveletInverse(input.row(row));
+	return input.topLeftCorner(rows, cols);
+}
+#endif
+
+double Median(Eigen::MatrixXd block)
+{
+	auto data = block.data();
+	auto nth = data + block.size() / 2;
+	auto last = data + block.size();
+	nth_element(data, nth, last, std::greater<int>());
+	return *nth;
+}
 
 double ReversePercentile(Eigen::MatrixXd block, double percentile)
 {
@@ -101,6 +197,7 @@ double ReversePercentile(Eigen::MatrixXd block, double percentile)
 void ThreshHold(Eigen::MatrixXd& image)
 {
 	printf("Removing low frequencies... ");
+#if USE_FFT
 	auto fft = FFT(image);
 	for (int row = -numLowFrequencies; row <= numLowFrequencies; row++)
 	{
@@ -112,7 +209,26 @@ void ThreshHold(Eigen::MatrixXd& image)
 		}
 	}
 	image = IFFT(fft);
+#else
+	int rows = image.rows();
+	int cols = image.cols();
+	auto wav = WaveletForward2d(image, Median(image));
+
+	for (int row = 0; row < (1 << numLowFrequencies); row++)
+	{
+		for (int col = 0; col < (1 << numLowFrequencies); col++)
+		{
+			wav(row, col) = 0;
+		}
+	}
+
+	//DumpImage("wavelet", wav + Eigen::MatrixXd::Random(wav.rows(), wav.cols()) * 0.001);
+
+	image = WaveletInverse2d(wav, rows, cols);
+#endif
 	puts("Done");
+
+	//DumpImage("recon", image.array() - image.minCoeff());
 
 	double thresh = ReversePercentile(image, flatPercent);
 	image = image.array() - thresh;
@@ -128,7 +244,7 @@ typedef Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic> ArrayXb;
 
 void FloodFill(Eigen::MatrixXd& image, int row, int col, double& centerRow, double& centerCol, double& totalSum, int& totalValues)
 {
-	if (row < 0 || row >= image.rows() || col < 0 || col >= image.cols())
+	if (totalValues > 2048 || row < 0 || row >= image.rows() || col < 0 || col >= image.cols())
 		return;
 	double value = image(row, col);
 	if (value <= 0)
