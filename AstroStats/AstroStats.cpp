@@ -1,4 +1,5 @@
 #define COMPILE_WINDOWS_USE_GUI 1
+#define MAIN_TRY_BLOCK 1
 
 #include <string>
 #include <vector>
@@ -71,11 +72,9 @@ std::vector<std::string> GetArgs(int argc, char* argv[])
 {
 	if (argc < 2)
 	{
-		// linux people know how to use terminals, screw the GUI.
+		// linux people know how to use terminals, who cares about the GUI.
 		puts("Usage:");
 		puts("AstroStats [list of .fits files]");
-		puts("Press any key to exit");
-		getchar();
 		return std::vector<std::string>();
 	}
 	return GetArgsCommon(argc, argv);
@@ -227,8 +226,10 @@ public:
 
 int main(int argc, char* argv[])
 {
+#if MAIN_TRY_BLOCK
 	try
 	{
+#endif
 		auto args = GetArgs(argc, argv);
 		if (args.size() == 0)
 			return -1;
@@ -276,10 +277,11 @@ int main(int argc, char* argv[])
 		}
 		puts("Computing final standard deviation");
 		if (args.size() > 1)
-			*M2 /= args.size() - 1;
+			*M2 /= static_cast<double>(args.size() - 1);
 		M2->sqrtAll();
 		printf("Saving %s\n", outputFilename.c_str());
 		outputFile->WriteImage(*M2);
+#if MAIN_TRY_BLOCK
 	}
 	catch (std::exception ex)
 	{
@@ -288,4 +290,5 @@ int main(int argc, char* argv[])
 		puts("Press any key to exit");
 		getchar();
 	}
+#endif
 }
