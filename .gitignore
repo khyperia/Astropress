@@ -4,4 +4,9 @@
 *.suo
 *.dll
 *.filters
+*.sdf
+*.user
+Debug/
+Release/
 /AstropressPlus/include
+/AstroStats/include
