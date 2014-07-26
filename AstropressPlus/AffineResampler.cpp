@@ -22,12 +22,13 @@ double Index(Eigen::MatrixXd const& matrix, double row, double col)
 
 Eigen::MatrixXd AffineResample(Eigen::MatrixXd const& source, Eigen::MatrixXd affine)
 {
-	Eigen::MatrixXd result(source.rows(), source.cols());
+	const int subsample = 2;
+	Eigen::MatrixXd result(source.rows() * subsample, source.cols() * subsample);
 	for (int row = 0; row < result.rows(); row++)
 	{
 		for (int col = 0; col < result.cols(); col++)
 		{
-			Eigen::Vector2d index = affine * Eigen::Vector3d(row, col, 1);
+			Eigen::Vector2d index = affine * Eigen::Vector3d(static_cast<double>(row) / subsample, static_cast<double>(col) / subsample, 1);
 			result(row, col) = Index(source, index[0], index[1]);
 		}
 	}
