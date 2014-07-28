@@ -3,6 +3,7 @@
 #include <fitsio.h>
 #include <cstdio>
 #include <fstream>
+#include <iostream>
 
 #ifdef _WIN32
 const std::string os_dirsep("\\");
@@ -14,7 +15,7 @@ std::runtime_error error(int status)
 {
 	if (status == 105)
 	{
-		puts("Error note: error 105 usually means the saving directory doesn't exist");
+		std::cout << "Error note: error 105 usually means the saving directory doesn't exist" << std::endl;
 	}
 	return std::runtime_error(std::string("FITS file library error: code ") + std::to_string(status));
 }
@@ -41,7 +42,7 @@ void DumpImage(char const* basename, Eigen::MatrixXd const& image)
 		if (checker.fail())
 			break;
 	}
-	printf("Dumping %s\n", final.c_str());
+	std::cout << "Dumping " << final << std::endl;
 	SaveImage(final.c_str(), image);
 }
 

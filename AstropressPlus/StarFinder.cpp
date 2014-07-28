@@ -1,6 +1,7 @@
 #include "StarFinder.h"
 
 #include "ImageIo.h"
+#include <iostream>
 
 static bool starLocationDumpEnabled = false;
 static bool flatImageDumpEnabled = false;
@@ -148,7 +149,7 @@ double ReversePercentile(Eigen::MatrixXd block, double percentile)
 
 void ThreshHold(Eigen::MatrixXd& image)
 {
-	printf("Removing low frequencies... ");
+	std::cout << "Removing low frequencies... ";
 	int rows = image.rows();
 	int cols = image.cols();
 	auto wav = Wavelet::WaveletForward2d(image, Median(image));
@@ -163,7 +164,7 @@ void ThreshHold(Eigen::MatrixXd& image)
 
 	image = Wavelet::WaveletInverse2d(wav, rows, cols);
 
-	puts("Done");
+	std::cout << "Done" << std::endl;
 
 	//DumpImage("recon", image.array() - image.minCoeff());
 
@@ -176,8 +177,6 @@ void ThreshHold(Eigen::MatrixXd& image)
 		DumpImage("flattened", image);
 	}
 }
-
-typedef Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic> ArrayXb;
 
 void FloodFill(Eigen::MatrixXd& image, int row, int col, double& centerRow, double& centerCol, double& totalSum, int& totalValues)
 {

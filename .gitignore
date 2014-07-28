@@ -6,6 +6,7 @@
 *.filters
 *.sdf
 *.user
+*.opensdf
 Debug/
 Release/
 /AstropressPlus/include

@@ -37,7 +37,7 @@ char* grabParam(char**& argv, const char* toMatch)
 		}
 
 		argv--; // back up to make sure parse() doesn't overshoot the null
-		printf("Command parse warning: %s did not have parameter\n", toMatch);
+		std::cout << "Command parse warning: " << toMatch << " did not have parameter" << std::endl;
 	}
 	return nullptr;
 }
@@ -91,7 +91,7 @@ int main(int argc, char* argv[])
 #endif
 		if (argc == 0)
 		{
-			printf("Bad command: No program name passed in argv (what the heck?)\n");
+			std::cout << "Bad command: No program name passed in argv (what the heck?)" << std::endl;
 			return -1;
 		}
 
@@ -103,38 +103,40 @@ int main(int argc, char* argv[])
 
 		if (inputs.size() == 0)
 		{
-			puts("Possible arguments:");
-			puts("  --reference [image] - registers to specified image, as opposed to the first file");
-			puts("  --out [image] - output filename (must be .fits)");
-			puts("  --outstdev [image] - stdev output filename (must be .fits)");
-			puts("  --shear_threshhold [value] - threshhold for rejection based on too high of affine shear (default 0.001)");
-			puts("  --star_threshhold [percent] - threshhold for flat image (test with --dump_flat) (higher is more accepting) (default 1.0)");
-			puts("  --freq_removal [percent] - number of low-frequency FFT factors to remove before finding stars (default 20)");
-			puts("  --dump_dir [directory] - specifies the directory to dump debug information");
-			puts("  --dump_flat - enable flattened image dumping (for star detection)");
-			puts("  --dump_stars - enable dumping of found star locations");
-			puts("  [list of input .fits images]");
+			std::cout
+				<< "Possible arguments:" << std::endl
+				<< "  --reference [image] - registers to specified image, as opposed to the first file" << std::endl
+				<< "  --out [image] - output filename (must be .fits)" << std::endl
+				<< "  --outstdev [image] - stdev output filename (must be .fits)" << std::endl
+				<< "  --shear_threshhold [value] - threshhold for rejection based on too high of affine shear (default 0.001)" << std::endl
+				<< "  --star_threshhold [percent] - threshhold for flat image (test with --dump_flat) (higher is more accepting) (default 1.0)" << std::endl
+				<< "  --freq_removal [percent] - number of low-frequency FFT factors to remove before finding stars (default 20)" << std::endl
+				<< "  --dump_dir [directory] - specifies the directory to dump debug information" << std::endl
+				<< "  --dump_flat - enable flattened image dumping (for star detection)" << std::endl
+				<< "  --dump_stars - enable dumping of found star locations" << std::endl
+				<< "  [list of input .fits images]" << std::endl;
 			return -1;
 		}
 
 		if (!output && !outputStdev)
 		{
-			puts("No --out or --outstdev specified. Did you mean this?");
-			puts("Running anyway and discarding result.");
+			std::cout
+				<< "No --out or --outstdev specified. Did you mean this?" << std::endl
+				<< "Running anyway and discarding result." << std::endl;
 		}
 
 		RunningStacker stacker;
-		printf("Loading/registering reference %s\n", referenceFile);
+		std::cout << "Loading/registering reference " << referenceFile << std::endl;
 		auto reference = FindStars(LoadImage(referenceFile));
 		Eigen::MatrixXd transformGuess = Eigen::MatrixXd::Identity(2, 3);
 
 		for (unsigned int inputIndex = 0; inputIndex < inputs.size(); inputIndex++)
 		{
-			printf("Loading %s\n", inputs[inputIndex]);
+			std::cout << "Loading " << inputs[inputIndex] << std::endl;
 			auto image = LoadImage(inputs[inputIndex]);
-			printf("Finding stars\n");
+			std::cout << "Finding stars" << std::endl;
 			auto stars = FindStars(image);
-			printf("Found %i stars, calculating transform\n", stars.size());
+			std::cout << "Found " << stars.size() << " stars, calculating transform" << std::endl;
 
 			auto newGuess = SolveTransform(stars, reference, transformGuess);
 
@@ -143,38 +145,41 @@ int main(int argc, char* argv[])
 			auto rotation = atan2(newGuess(0, 1), newGuess(0, 0));
 			auto shear = (newGuess(0, 0) * newGuess(1, 0) + newGuess(0, 1) * newGuess(1, 1)) / (newGuess(0, 0) * newGuess(1, 1) - newGuess(0, 1) * newGuess(1, 0));
 
-			printf("Scale: %.3fx %.3fy Rot: %.5f Translation: %.2f %.2f Shear: %.5f\n", scaleX, scaleY, rotation, newGuess(0, 2), newGuess(1, 2), shear);
+			std::cout << "Scale: " << scaleX << "x " << scaleY << "y Rot: " << rotation << " Translation: " << newGuess(0, 2) << " " << newGuess(1, 2) << " Shear: " << shear << std::endl;
 
 			if (abs(shear) > shearThreshhold)
 			{
-				puts("WARNING: Transform had a lot of shear, skipping this image");
-				puts("WARNING: Try reducing the --star_threshold parameter");
-				puts("WARNING: or modyfying --shear_threshhold if this judgement was wrong");
+				std::cout << "WARNING: Transform had a lot of shear, skipping this image" << std::endl;
+				std::cout << "WARNING: Try reducing the --star_threshold parameter" << std::endl;
+				std::cout << "WARNING: or modyfying --shear_threshhold if this judgement was wrong" << std::endl;
 				continue;
 			}
 			transformGuess = newGuess;
 
-			puts("Resampling and stacking");
+			std::cout << "Removing bad pixels... ";
+			int numBadPixels = RemoveBadPixels(image);
+			std::cout << "found " << numBadPixels << " bad pixels" << std::endl;
+			std::cout << "Resampling and stacking" << std::endl;
 			auto resample = AffineResample(image, transformGuess);
 			stacker.Stack(resample);
 		}
 		if (output)
 		{
-			printf("Saving %s\n", output);
+			std::cout << "Saving " << output << std::endl;
 			SaveImage(output, stacker.Mean());
 		}
 		if (outputStdev)
 		{
-			printf("Saving %s\n", outputStdev);
+			std::cout << "Saving " << outputStdev << std::endl;
 			SaveImage(outputStdev, stacker.Stdev());
 		}
 #if DoMainTry
 	}
 	catch (std::exception e)
 	{
-		puts("Exception!");
-		puts(e.what());
-		puts("Press any key to exit");
+		std::cout << "Exception!" << std::endl;
+		std::cout << e.what() << std::endl;
+		std::cout << "Press any key to exit" << std::endl;
 		getchar();
 	}
 #endif
