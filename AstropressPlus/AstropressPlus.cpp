@@ -44,14 +44,10 @@ char* grabParam(char**& argv, const char* toMatch)
 
 bool checkParam(char** argv, const char* toMatch)
 {
-	if (strcmp(*argv, toMatch) == 0)
-	{
-		return true;
-	}
-	return false;
+	return strcmp(*argv, toMatch) == 0;
 }
 
-void parse(char* argv[], char*& reference, char*& output, char*& outputStdev, std::vector<char*>& inputs)
+void parse(char* argv[], char*& reference, char*& output, char*& outputStdev, std::vector<char*>& inputs, bool& doRegister, double& subsample)
 {
 	argv++;
 	while (*argv)
@@ -63,6 +59,10 @@ void parse(char* argv[], char*& reference, char*& output, char*& outputStdev, st
 			output = value;
 		else if ((value = grabParam(argv, "--outstdev")))
 			outputStdev = value;
+		else if (checkParam(argv, "--noreg"))
+			doRegister = false;
+		else if ((value = grabParam(argv, "--subsample")))
+			subsample = stod(std::string(value), nullptr);
 		else if ((value = grabParam(argv, "--shear_threshhold")))
 			SetShearThreshhold(value);
 		else if ((value = grabParam(argv, "--star_threshhold")))
@@ -76,7 +76,12 @@ void parse(char* argv[], char*& reference, char*& output, char*& outputStdev, st
 		else if (checkParam(argv, "--dump_stars"))
 			EnableStarLocationDump();
 		else
+		{
+			std::string arg(*argv);
+			if (arg.length() > 0 && arg[0] == '-')
+				throw std::runtime_error("Unknown argument " + arg + " (if it's a file, rename the file to not start with a dash)");
 			inputs.push_back(*argv);
+		}
 		argv++;
 	}
 	if (!reference && inputs.size() > 0)
@@ -99,7 +104,9 @@ int main(int argc, char* argv[])
 		char* output = nullptr;
 		char* outputStdev = nullptr;
 		std::vector<char*> inputs;
-		parse(argv, referenceFile, output, outputStdev, inputs);
+		bool doRegister = true;
+		double subsample = 1;
+		parse(argv, referenceFile, output, outputStdev, inputs, doRegister, subsample);
 
 		if (inputs.size() == 0)
 		{
@@ -108,6 +115,8 @@ int main(int argc, char* argv[])
 				<< "  --reference [image] - registers to specified image, as opposed to the first file" << std::endl
 				<< "  --out [image] - output filename (must be .fits)" << std::endl
 				<< "  --outstdev [image] - stdev output filename (must be .fits)" << std::endl
+				<< "  --noreg - Do not align images" << std::endl
+				<< "  --subsample [number] - Resize images by factor of [number] when stacking" << std::endl
 				<< "  --shear_threshhold [value] - threshhold for rejection based on too high of affine shear (default 0.001)" << std::endl
 				<< "  --star_threshhold [percent] - threshhold for flat image (test with --dump_flat) (higher is more accepting) (default 1.0)" << std::endl
 				<< "  --freq_removal [percent] - number of low-frequency FFT factors to remove before finding stars (default 20)" << std::endl
@@ -127,51 +136,55 @@ int main(int argc, char* argv[])
 
 		RunningStacker stacker;
 		std::cout << "Loading/registering reference " << referenceFile << std::endl;
-		auto reference = FindStars(LoadImage(referenceFile));
+		auto referenceFits = FitsFile::CreateRead(referenceFile);
+		auto reference = FindStars(referenceFits->ReadImage());
 		Eigen::MatrixXd transformGuess = Eigen::MatrixXd::Identity(2, 3);
 
 		for (unsigned int inputIndex = 0; inputIndex < inputs.size(); inputIndex++)
 		{
 			std::cout << "Loading " << inputs[inputIndex] << std::endl;
-			auto image = LoadImage(inputs[inputIndex]);
-			std::cout << "Finding stars" << std::endl;
-			auto stars = FindStars(image);
-			std::cout << "Found " << stars.size() << " stars, calculating transform" << std::endl;
-
-			auto newGuess = SolveTransform(stars, reference, transformGuess);
-
-			auto scaleX = sqrt(newGuess(0, 0) * newGuess(0, 0) + newGuess(0, 1) * newGuess(0, 1));
-			auto scaleY = (newGuess(0, 0) * newGuess(1, 1) - newGuess(0, 1) * newGuess(1, 0)) / scaleX;
-			auto rotation = atan2(newGuess(0, 1), newGuess(0, 0));
-			auto shear = (newGuess(0, 0) * newGuess(1, 0) + newGuess(0, 1) * newGuess(1, 1)) / (newGuess(0, 0) * newGuess(1, 1) - newGuess(0, 1) * newGuess(1, 0));
-
-			std::cout << "Scale: " << scaleX << "x " << scaleY << "y Rot: " << rotation << " Translation: " << newGuess(0, 2) << " " << newGuess(1, 2) << " Shear: " << shear << std::endl;
-
-			if (abs(shear) > shearThreshhold)
-			{
-				std::cout << "WARNING: Transform had a lot of shear, skipping this image" << std::endl;
-				std::cout << "WARNING: Try reducing the --star_threshold parameter" << std::endl;
-				std::cout << "WARNING: or modyfying --shear_threshhold if this judgement was wrong" << std::endl;
-				continue;
-			}
-			transformGuess = newGuess;
-
+			auto image = FitsFile::CreateRead(inputs[inputIndex])->ReadImage();
 			std::cout << "Removing bad pixels... ";
 			int numBadPixels = RemoveBadPixels(image);
 			std::cout << "found " << numBadPixels << " bad pixels" << std::endl;
-			std::cout << "Resampling and stacking" << std::endl;
-			auto resample = AffineResample(image, transformGuess);
-			stacker.Stack(resample);
+			if (doRegister)
+			{
+				std::cout << "Finding stars" << std::endl;
+				auto stars = FindStars(image);
+				std::cout << "Found " << stars.size() << " stars, calculating transform" << std::endl;
+
+				auto newGuess = SolveTransform(stars, reference, transformGuess);
+
+				auto scaleX = sqrt(newGuess(0, 0) * newGuess(0, 0) + newGuess(0, 1) * newGuess(0, 1));
+				auto scaleY = (newGuess(0, 0) * newGuess(1, 1) - newGuess(0, 1) * newGuess(1, 0)) / scaleX;
+				auto rotation = atan2(newGuess(0, 1), newGuess(0, 0));
+				auto shear = (newGuess(0, 0) * newGuess(1, 0) + newGuess(0, 1) * newGuess(1, 1)) / (newGuess(0, 0) * newGuess(1, 1) - newGuess(0, 1) * newGuess(1, 0));
+
+				std::cout << "Scale: " << scaleX << "x " << scaleY << "y Rot: " << rotation << " Translation: " << newGuess(0, 2) << " " << newGuess(1, 2) << " Shear: " << shear << std::endl;
+
+				if (abs(shear) > shearThreshhold)
+				{
+					std::cout << "WARNING: Transform had a lot of shear, skipping this image" << std::endl;
+					std::cout << "WARNING: Try reducing the --star_threshold parameter" << std::endl;
+					std::cout << "WARNING: or modyfying --shear_threshhold if this judgement was wrong" << std::endl;
+					continue;
+				}
+				transformGuess = newGuess;
+
+				std::cout << "Resampling and stacking" << std::endl;
+				image = AffineResample(image, transformGuess, subsample);
+			}
+			stacker.Stack(image);
 		}
 		if (output)
 		{
 			std::cout << "Saving " << output << std::endl;
-			SaveImage(output, stacker.Mean());
+			FitsFile::CreateWrite(referenceFits, output)->WriteImage(stacker.Mean());
 		}
 		if (outputStdev)
 		{
 			std::cout << "Saving " << outputStdev << std::endl;
-			SaveImage(outputStdev, stacker.Stdev());
+			FitsFile::CreateWrite(referenceFits, outputStdev)->WriteImage(stacker.Stdev());
 		}
 #if DoMainTry
 	}
