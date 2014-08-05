@@ -6,7 +6,7 @@
 static bool starLocationDumpEnabled = false;
 static bool flatImageDumpEnabled = false;
 static double flatPercent = 1.0;
-static int numLowFrequencies = 5;
+static int numHighFrequencies = 3;
 
 void EnableStarLocationDump()
 {
@@ -32,12 +32,12 @@ void SetFlatPercent(char const* str)
 	}
 }
 
-void SetNumLowFrequencies(char const* str)
+void SetNumHighFrequencies(char const* str)
 {
 	try
 	{
-		numLowFrequencies = stoi(std::string(str));
-		if (numLowFrequencies < 0)
+		numHighFrequencies = stoi(std::string(str));
+		if (numHighFrequencies < 0)
 			throw std::runtime_error("--freq_removal cannot be < 0");
 	}
 	catch (std::invalid_argument)
@@ -154,9 +154,11 @@ void ThreshHold(Eigen::MatrixXd& image)
 	int cols = image.cols();
 	auto wav = Wavelet::WaveletForward2d(image, Median(image));
 
-	for (int row = 0; row < (1 << numLowFrequencies); row++)
+	int maxrow = 1 << (static_cast<int>(log2(rows)) - numHighFrequencies);
+	int maxcol = 1 << (static_cast<int>(log2(cols)) - numHighFrequencies);
+	for (int row = 0; row < maxrow; row++)
 	{
-		for (int col = 0; col < (1 << numLowFrequencies); col++)
+		for (int col = 0; col < maxcol; col++)
 		{
 			wav(row, col) = 0;
 		}
@@ -166,7 +168,10 @@ void ThreshHold(Eigen::MatrixXd& image)
 
 	std::cout << "Done" << std::endl;
 
-	//DumpImage("recon", image.array() - image.minCoeff());
+	if (flatImageDumpEnabled)
+	{
+		DumpImage("flattened", image);
+	}
 
 	double thresh = ReversePercentile(image, flatPercent);
 	image = image.array() - thresh;
@@ -174,7 +179,7 @@ void ThreshHold(Eigen::MatrixXd& image)
 
 	if (flatImageDumpEnabled)
 	{
-		DumpImage("flattened", image);
+		DumpImage("flatThresh", image);
 	}
 }
 
