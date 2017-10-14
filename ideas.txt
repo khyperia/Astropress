@@ -1,0 +1,5 @@
+Hot pixel detection:
+Wavelet filter all images, only keep structure a couple pixels big
+Median-stack filtered images (median to eliminate things like stars - small structure)
+For each image, least-squares fit the brightness of the stacked image
+Subtract the fitted image
