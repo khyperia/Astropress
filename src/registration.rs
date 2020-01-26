@@ -70,7 +70,7 @@ pub fn register(images: &[Image<f64>]) -> Vec<(f64, f64)> {
 
 fn get_offset(image: &Image<Complex64>) -> (f64, f64) {
     let uid: f64 = image.iter_index().take(100).map(|i| image[i].re).sum();
-    crate::imgio::save(format!("{}.png", uid), &image.to_real()).unwrap();
+    image.to_real().save(format!("{}.png", uid)).unwrap();
 
     let (max_x, max_y) = image
         .iter_index()

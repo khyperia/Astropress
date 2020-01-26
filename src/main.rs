@@ -3,12 +3,12 @@ extern crate png;
 mod alg;
 mod dark_extract;
 mod image;
-mod imgio;
 mod registration;
 mod stack;
 mod starfinder;
 mod stretch;
 
+use crate::image::Image;
 use failure::Error;
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -40,7 +40,7 @@ fn go() -> Result<(), Error> {
         .par_iter()
         .map(|path| {
             println!("Reading {}", path.display());
-            match imgio::load(&path) {
+            match Image::load(&path) {
                 Ok(img) => Ok(img),
                 Err(err) => Err(failure::err_msg(format!(
                     "Error loading {}: {}",
@@ -63,7 +63,7 @@ fn go() -> Result<(), Error> {
             let marked = starfinder::debug_mark(&stretched, stars);
             let path = format!("{}.png", i);
             println!("Saving {}", path);
-            imgio::save_rgb(&path, &marked)
+            marked.save(&path)
         })
         .collect::<Result<(), Error>>()?;
     /*
@@ -105,7 +105,7 @@ fn do_dark_extract() -> Result<(), Error> {
         record.Path.push(record.File);
         record.Path.set_extension("png");
         let image = image::AlignedImage {
-            image: imgio::load(record.Path)?,
+            image: Image::load(record.Path)?,
             d_x: record.dX,
             d_y: record.dY,
             angle: record.Angle.replace(" °", "").parse()?,
@@ -113,7 +113,7 @@ fn do_dark_extract() -> Result<(), Error> {
         images.push(image);
     }
     let result = dark_extract::go(images);
-    imgio::save("fuck.png", &result)?;
+    result.save("fuck.png")?;
     Ok(())
 }
 

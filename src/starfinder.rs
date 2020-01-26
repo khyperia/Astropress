@@ -1,9 +1,16 @@
 use crate::{
-    alg::{floodfind, mean_stdev},
+    alg::{f64_to_u8, floodfind, mean_stdev},
     image,
     image::Image,
-    imgio,
 };
+
+/*
+Alternate algorithm:
+
+1) Find brightest pixel
+2) Flood fill out to brightest neighbor, until certain number of pixels in size, or threshhold is reached (median of surroundings?)
+3) Mask out star, goto 1, until N stars are found
+*/
 
 pub fn find_stars(img: &Image<f64>) -> Vec<(f64, f64)> {
     let (mean, stdev) = mean_stdev(img);
@@ -11,18 +18,27 @@ pub fn find_stars(img: &Image<f64>) -> Vec<(f64, f64)> {
     let floor = mean + stdev * noise_sigma;
     let min_size = 5;
     let max_size = 100;
+    //let mut debug_img = Image::zero(img.size);
     let mut stars = Vec::new();
     for star in floodfind(img, |v| v > floor) {
         if star.len() > max_size {
-            println!("big boi: {}", star.len());
-        }
-        if star.len() < min_size || star.len() > max_size {
+            //println!("big boi: {}", star.len());
+            //for pixel in star {
+            //    debug_img[pixel] = [255, 0, 0];
+            //}
             continue;
         }
-        println!("star glob ok: {}", star.len());
+        if star.len() < min_size {
+            //for pixel in star {
+            //    debug_img[pixel] = [0, 0, 255];
+            //}
+            continue;
+        }
+        //println!("star glob ok: {}", star.len());
         let mut sum = (0.0, 0.0);
         let mut count = 0.0;
         for pixel in star {
+            //debug_img[pixel] = [0, 255, 0];
             let weight = img[pixel] - floor;
             sum = (
                 sum.0 + pixel.0 as f64 * weight,
@@ -33,6 +49,7 @@ pub fn find_stars(img: &Image<f64>) -> Vec<(f64, f64)> {
         let average = (sum.0 / count, sum.1 / count);
         stars.push(average);
     }
+    //crate::imgio::save_rgb("mask.png", &debug_img).unwrap();
     stars
 }
 
@@ -42,7 +59,7 @@ pub fn debug_mark(img: &Image<f64>, stars: &[(f64, f64)]) -> Image<[u8; 3]> {
         img.data
             .iter()
             .map(|&v| {
-                let v = imgio::f64_to_u8(v);
+                let v = f64_to_u8(v);
                 [v, v, v]
             })
             .collect(),

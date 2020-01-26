@@ -51,6 +51,30 @@ pub fn mean_stdev(seq: impl IntoIterator<Item = f64>) -> (f64, f64) {
     (mean, variance.sqrt())
 }
 
+pub fn f64_to_u16(mut value: f64) -> u16 {
+    let max_value = f64::from(u16::max_value());
+    value *= max_value;
+    if value >= max_value {
+        u16::max_value()
+    } else if value > 0.0 {
+        value as u16
+    } else {
+        0
+    }
+}
+
+pub fn f64_to_u8(mut value: f64) -> u8 {
+    let max_value = f64::from(u8::max_value());
+    value *= max_value;
+    if value >= max_value {
+        u8::max_value()
+    } else if value > 0.0 {
+        value as u8
+    } else {
+        0
+    }
+}
+
 // least-squares solve for x:
 // matrix * x = vector
 // matrix is row-major (it's easier to define that way in code)
