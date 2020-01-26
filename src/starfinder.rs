@@ -12,7 +12,20 @@ Alternate algorithm:
 3) Mask out star, goto 1, until N stars are found
 */
 
-pub fn find_stars(img: &Image<f64>) -> Vec<(f64, f64)> {
+pub struct Star {
+    pub x: f64,
+    pub y: f64,
+    // flux isn't *totally* correct, it's underestimated, since the fringes of the star are cut off and not added
+    pub flux: f64,
+}
+
+impl Star {
+    pub fn new(x: f64, y: f64, flux: f64) -> Self {
+        Self { x, y, flux }
+    }
+}
+
+pub fn find_stars(img: &Image<f64>) -> Vec<Star> {
     let (mean, stdev) = mean_stdev(img);
     let noise_sigma = 3.0;
     let floor = mean + stdev * noise_sigma;
@@ -36,24 +49,26 @@ pub fn find_stars(img: &Image<f64>) -> Vec<(f64, f64)> {
         }
         //println!("star glob ok: {}", star.len());
         let mut sum = (0.0, 0.0);
-        let mut count = 0.0;
+        let mut total_flux_above = 0.0;
+        let star_len = star.len();
         for pixel in star {
             //debug_img[pixel] = [0, 255, 0];
-            let weight = img[pixel] - floor;
+            let flux_above = img[pixel] - floor;
             sum = (
-                sum.0 + pixel.0 as f64 * weight,
-                sum.1 + pixel.1 as f64 * weight,
+                sum.0 + pixel.0 as f64 * flux_above,
+                sum.1 + pixel.1 as f64 * flux_above,
             );
-            count += weight;
+            total_flux_above += flux_above;
         }
-        let average = (sum.0 / count, sum.1 / count);
-        stars.push(average);
+        let average = (sum.0 / total_flux_above, sum.1 / total_flux_above);
+        let total_flux = total_flux_above + star_len as f64 * (stdev * noise_sigma);
+        stars.push(Star::new(average.0, average.1, total_flux));
     }
     //crate::imgio::save_rgb("mask.png", &debug_img).unwrap();
     stars
 }
 
-pub fn debug_mark(img: &Image<f64>, stars: &[(f64, f64)]) -> Image<[u8; 3]> {
+pub fn debug_mark(img: &Image<f64>, stars: &[Star]) -> Image<[u8; 3]> {
     println!("{} stars found", stars.len());
     let mut new_img = Image::new(
         img.data
@@ -76,7 +91,7 @@ pub fn debug_mark(img: &Image<f64>, stars: &[(f64, f64)]) -> Image<[u8; 3]> {
                 }
             }
         }
-        let coord = (star.0 as usize, star.1 as usize);
+        let coord = (star.x as usize, star.y as usize);
         go(&mut new_img, coord, (1, 0));
         go(&mut new_img, coord, (0, 1));
     }

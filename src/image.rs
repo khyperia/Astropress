@@ -1,6 +1,5 @@
 use crate::alg::f64_to_u16;
 use failure::Error;
-use rustfft::{num_complex::Complex64, num_traits::identities::Zero, FFT};
 use std::{cell::RefCell, collections::HashMap, fs::File, path::Path, sync::Arc};
 
 #[derive(Clone)]
@@ -125,13 +124,6 @@ impl<'a, T: Copy> IntoIterator for &'a Image<T> {
 }
 
 impl Image<f64> {
-    pub fn to_complex(&self) -> Image<Complex64> {
-        Image::new(
-            self.data.iter().map(|&x| (x as f64).into()).collect(),
-            self.size,
-        )
-    }
-
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Error> {
         let max = self
             .data
@@ -199,91 +191,6 @@ impl Image<[u8; 3]> {
     }
 }
 
-impl Image<Complex64> {
-    pub fn to_real(&self) -> Image<f64> {
-        Image::new(self.data.iter().map(|&x| x.re).collect(), self.size)
-    }
-
-    pub fn weird_mul(&self, other: &Self) -> Self {
-        let out = self
-            .data
-            .iter()
-            .zip(other.data.iter())
-            .map(|(a, b)| {
-                let prod = a * b.conj();
-                prod / prod.norm()
-            })
-            .collect::<Vec<_>>();
-        Self::new(out, self.size)
-    }
-
-    fn transpose(&self) -> Self {
-        let mut output = Self::new(
-            vec![Complex64::zero(); self.data.len()],
-            (self.size.1, self.size.0),
-        );
-        for y in 0..self.size.1 {
-            for x in 0..self.size.0 {
-                output[(y, x)] = self[(x, y)];
-            }
-        }
-        output
-    }
-
-    // must be in-place because process_multi wrecks the input
-    fn fft_x(&mut self, inverse: bool) {
-        type FFT64 = Arc<dyn FFT<f64>>;
-        thread_local! {
-            static PLAN_MAP: RefCell<HashMap<(usize, bool), FFT64>> = RefCell::new(HashMap::new());
-        }
-        PLAN_MAP.with(|plan_map| {
-            let mut plan_map = plan_map.borrow_mut();
-            let f = plan_map
-                .entry((self.size.0, inverse))
-                .or_insert_with(|| rustfft::FFTplanner::new(inverse).plan_fft(self.size.0));
-            let mut output = vec![Complex64::zero(); self.data.len()];
-            f.process_multi(&mut self.data, &mut output);
-            self.data = output;
-        })
-    }
-
-    pub fn fft(&self, inverse: bool) -> Self {
-        let mut res = self.transpose();
-        res.fft_x(inverse);
-        res = res.transpose();
-        res.fft_x(inverse);
-        res
-    }
-
-    pub fn median_filter(&self) -> Self {
-        let data = self
-            .iter_index()
-            .map(|(x, y)| {
-                let x = x as isize;
-                let y = y as isize;
-                let mut values = [
-                    self.get_clamped(x - 1, y - 1),
-                    self.get_clamped(x, y - 1),
-                    self.get_clamped(x + 1, y),
-                    self.get_clamped(x - 1, y),
-                    self.get_clamped(x, y),
-                    self.get_clamped(x + 1, y),
-                    self.get_clamped(x - 1, y + 1),
-                    self.get_clamped(x, y + 1),
-                    self.get_clamped(x + 1, y + 1),
-                ];
-                // TODO: partition_at_index_by
-                values.sort_unstable_by(|l, r| l.re.partial_cmp(&r.re).unwrap());
-                values[4]
-            })
-            .collect();
-        Self {
-            data,
-            size: self.size,
-        }
-    }
-}
-
 struct Range2d {
     size: (usize, usize),
     cur: (usize, usize),
@@ -314,31 +221,5 @@ impl Iterator for Range2d {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let size = self.size.0 * self.size.1;
         (size, Some(size))
-    }
-}
-
-pub struct AlignedImage {
-    pub image: Image<f64>,
-    pub d_x: f64,
-    pub d_y: f64,
-    pub angle: f64,
-}
-
-impl AlignedImage {
-    pub fn local_to_global(&self, local: (f64, f64)) -> (f64, f64) {
-        (local.0 + self.d_x, local.1 + self.d_y)
-    }
-
-    pub fn global_to_local(&self, global: (f64, f64)) -> (f64, f64) {
-        (global.0 - self.d_x, global.1 - self.d_y)
-    }
-
-    pub fn get_global(&self, global: (f64, f64)) -> f64 {
-        let (x, y) = self.global_to_local(global);
-        if x < 0.0 || x >= self.image.size.0 as f64 || y < 0.0 || y >= self.image.size.1 as f64 {
-            0.0
-        } else {
-            self.image[(x as usize, y as usize)]
-        }
     }
 }

@@ -5,14 +5,11 @@ edition = "2018"
 authors = ["khyperia <khyperia@live.com>"]
 
 [dependencies]
-csv = "*"
 failure = "*"
 lazy_static = "*"
 nalgebra = "*"
 png = "*"
 rayon = "*"
-rustfft = "*"
-serde = { version="*", features=["derive"] }
 
 [dev-dependencies]
 rand = "*"

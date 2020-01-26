@@ -1,7 +1,6 @@
 extern crate png;
 
 mod alg;
-mod dark_extract;
 mod image;
 mod registration;
 mod stack;
@@ -11,18 +10,17 @@ mod stretch;
 use crate::image::Image;
 use failure::Error;
 use rayon::prelude::*;
-use serde::Deserialize;
 use std::{
     env::args,
     path::{Path, PathBuf},
 };
 
-fn read(images: &mut Vec<PathBuf>, path: impl AsRef<Path>) -> Result<(), Error> {
+fn paths_to_read(images: &mut Vec<PathBuf>, path: impl AsRef<Path>) -> Result<(), Error> {
     let path = path.as_ref();
     if path.is_dir() {
         for entry in path.read_dir()? {
             let entry = entry?;
-            read(images, entry.path())?;
+            paths_to_read(images, entry.path())?;
         }
     } else {
         images.push(path.to_owned());
@@ -30,13 +28,12 @@ fn read(images: &mut Vec<PathBuf>, path: impl AsRef<Path>) -> Result<(), Error> 
     Ok(())
 }
 
-fn go() -> Result<(), Error> {
-    println!("Running with {} threads", rayon::current_num_threads());
+fn load_args() -> Result<Vec<Image<f64>>, Error> {
     let mut image_paths = Vec::new();
     for arg in args().skip(1) {
-        read(&mut image_paths, arg)?;
+        paths_to_read(&mut image_paths, arg)?;
     }
-    let images = image_paths
+    image_paths
         .par_iter()
         .map(|path| {
             println!("Reading {}", path.display());
@@ -49,11 +46,17 @@ fn go() -> Result<(), Error> {
                 ))),
             }
         })
-        .collect::<Result<Vec<_>, Error>>()?;
+        .collect::<Result<Vec<_>, Error>>()
+}
+
+fn go() -> Result<(), Error> {
+    println!("Running with {} threads", rayon::current_num_threads());
+    let images = load_args()?;
     let stars = images
         .par_iter()
         .map(|img| starfinder::find_stars(img))
         .collect::<Vec<_>>();
+    // TODO: if (debug_output_found_stars)
     images
         .par_iter()
         .zip(stars.par_iter())
@@ -84,40 +87,6 @@ fn go() -> Result<(), Error> {
     Ok(())
 }
 
-#[allow(non_snake_case)]
-#[derive(Debug, Deserialize)]
-struct Record {
-    Path: PathBuf,
-    File: PathBuf,
-    dX: f64,
-    dY: f64,
-    Angle: String,
-}
-
-fn do_dark_extract() -> Result<(), Error> {
-    let file = args()
-        .nth(1)
-        .ok_or_else(|| failure::err_msg("Error: must provide DSS info file"))?;
-    let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').from_path(file)?;
-    let mut images = Vec::new();
-    for record in reader.deserialize() {
-        let mut record: Record = record?;
-        record.Path.push(record.File);
-        record.Path.set_extension("png");
-        let image = image::AlignedImage {
-            image: Image::load(record.Path)?,
-            d_x: record.dX,
-            d_y: record.dY,
-            angle: record.Angle.replace(" °", "").parse()?,
-        };
-        images.push(image);
-    }
-    let result = dark_extract::go(images);
-    result.save("fuck.png")?;
-    Ok(())
-}
-
 fn main() -> Result<(), Error> {
     go()
-    //do_dark_extract()
 }
